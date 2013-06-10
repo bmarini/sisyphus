@@ -9,13 +9,20 @@
 ( function( $ ) {
 
   $.fn.sisyphus = function( options ) {
-    var identifier = $.map( this, function( obj, i ) {
-      return $( obj ).attr( "id" ) + $( obj ).attr( "name" )
-    }).join();
+    $( this ).each(function() {
+      var sis = $(this).data( 'sisyphus' )
 
-    var sisyphus = Sisyphus.getInstance( identifier );
-    sisyphus.protect( this, options );
-    return sisyphus;
+      if ( sis ) {
+        return sis;
+      } else {
+        sis = Sisyphus.init();
+        sis.setInitialOptions();
+        sis.protect( this, options );
+        $(this).data( 'sisyphus', sis)
+
+        return sis;
+      }
+    });
   };
 
   var browserStorage = {};
@@ -88,22 +95,12 @@
   };
 
   Sisyphus = ( function() {
-    var params = {
-      instantiated: [],
-      started: []
-    };
 
     function init ( identifier ) {
+      var instantiated = false;
+      var started = false;
 
       return {
-        setInstanceIdentifier: function( identifier ) {
-          this.identifier = identifier
-        },
-
-        getInstanceIdentifier: function() {
-          return this.identifier;
-        },
-
         /**
          * Set plugin initial options
          *
@@ -169,9 +166,9 @@
             self.bindReleaseData();
           }
 
-          if ( ! params.started[ this.getInstanceIdentifier() ] ) {
+          if ( ! started ) {
             self.bindSaveData();
-            params.started[ this.getInstanceIdentifier() ] = true;
+            started = true;
           }
         },
 
@@ -448,22 +445,8 @@
     }
 
     return {
-      getInstance: function( identifier ) {
-        if ( ! params.instantiated[ identifier ] ) {
-          params.instantiated[ identifier ] = init();
-          params.instantiated[ identifier ].setInstanceIdentifier( identifier );
-          params.instantiated[ identifier ].setInitialOptions();
-        }
-        if ( identifier ) {
-          return params.instantiated[ identifier ];
-        }
-        return params.instantiated[ identifier ];
-      },
-
-      free: function() {
-        params = {};
-        return null;
-      }
+      init : init
     };
+
   } )();
 } )( jQuery );
