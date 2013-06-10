@@ -7,7 +7,6 @@
  */
 
 ( function( $ ) {
-
   $.fn.sisyphus = function( options ) {
     $( this ).each(function() {
       var sis = $(this).data( 'sisyphus' )
@@ -15,9 +14,9 @@
       if ( sis ) {
         return sis;
       } else {
-        sis = Sisyphus.init();
+        sis = Sisyphus.init(this);
         sis.setInitialOptions();
-        sis.protect( this, options );
+        sis.protect( options );
         $(this).data( 'sisyphus', sis)
 
         return sis;
@@ -96,7 +95,7 @@
 
   Sisyphus = ( function() {
 
-    function init ( identifier ) {
+    function init (form) {
       var instantiated = false;
       var started = false;
 
@@ -139,20 +138,16 @@
         /**
          * Protect specified forms, store it's fields data to local storage and restore them on page load
          *
-         * @param [Object] targets    forms object(s), result of jQuery selector
          * @param Object options      plugin options
          *
          * @return void
          */
-        protect: function( targets, options ) {
+        protect: function( options ) {
           this.setOptions( options );
-          targets = targets || {};
           var self = this;
-          this.targets = this.targets || [];
+
           this.href = location.hostname + location.pathname + location.search + location.hash;
-          this.targets = $.merge( this.targets, targets );
-          this.targets = $.unique( this.targets );
-          this.targets = $( this.targets );
+
           if ( ! this.browserStorage.isAvailable() ) {
             return false;
           }
@@ -184,23 +179,21 @@
             self.saveDataByTimeout();
           }
 
-          self.targets.each( function() {
-            var targetFormIdAndName = $( this ).attr( "id" ) + $( this ).attr( "name" );
-            var fieldsToProtect = $( this ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-            fieldsToProtect.each( function() {
-              if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
-                // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
-                return true;
+          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
+          var fieldsToProtect = $( form ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
+          fieldsToProtect.each( function() {
+            if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
+              // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
+              return true;
+            }
+            var field = $( this );
+            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
+            if ( field.is( ":text" ) || field.is( "textarea" ) ) {
+              if ( ! self.options.timeout ) {
+                self.bindSaveDataImmediately( field, prefix );
               }
-              var field = $( this );
-              var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
-              if ( field.is( ":text" ) || field.is( "textarea" ) ) {
-                if ( ! self.options.timeout ) {
-                  self.bindSaveDataImmediately( field, prefix );
-                }
-              }
-              self.bindSaveDataOnChange( field, prefix );
-            } );
+            }
+            self.bindSaveDataOnChange( field, prefix );
           } );
         },
 
@@ -213,39 +206,38 @@
          */
         saveAllData: function() {
           var self = this;
-          self.targets.each( function() {
-            var targetFormIdAndName = $( this ).attr( "id" ) + $( this ).attr( "name" );
-            var fieldsToProtect = $( this ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file").not( ":password" );
+          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
+          var fieldsToProtect = $( form ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file").not( ":password" );
 
-            fieldsToProtect.each( function() {
-              var field = $( this );
-              if ( $.inArray( this, self.options.excludeFields ) !== -1 || field.attr( "name" ) === undefined ) {
-                // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
-                return true;
-              }
-              var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
-              var value = field.val();
+          fieldsToProtect.each( function() {
+            var field = $( this );
+            if ( $.inArray( this, self.options.excludeFields ) !== -1 || field.attr( "name" ) === undefined ) {
+              // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
+              return true;
+            }
+            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
+            var value = field.val();
 
-              if ( field.is(":checkbox") ) {
-                if ( field.attr( "name" ).indexOf( "[" ) !== -1 ) {
-                  value = [];
-                  $( "[name='" + field.attr( "name" ) +"']:checked" ).each( function() {
-                    value.push( $( this ).val() );
-                  } );
-                } else {
-                  value = field.is( ":checked" );
-                }
-                self.saveToBrowserStorage( prefix, value, false );
-              } else if ( field.is( ":radio" ) ) {
-                if ( field.is( ":checked" ) ) {
-                  value = field.val();
-                  self.saveToBrowserStorage( prefix, value, false );
-                }
+            if ( field.is(":checkbox") ) {
+              if ( field.attr( "name" ).indexOf( "[" ) !== -1 ) {
+                value = [];
+                $( "[name='" + field.attr( "name" ) +"']:checked" ).each( function() {
+                  value.push( $( this ).val() );
+                } );
               } else {
+                value = field.is( ":checked" );
+              }
+              self.saveToBrowserStorage( prefix, value, false );
+            } else if ( field.is( ":radio" ) ) {
+              if ( field.is( ":checked" ) ) {
+                value = field.val();
                 self.saveToBrowserStorage( prefix, value, false );
               }
-            } );
+            } else {
+              self.saveToBrowserStorage( prefix, value, false );
+            }
           } );
+
           self.options.onSave.call();
         },
 
@@ -258,24 +250,22 @@
           var self = this;
           var restored = false;
 
-          self.targets.each( function() {
-            var target = $( this );
-            var targetFormIdAndName = $( this ).attr( "id" ) + $( this ).attr( "name" );
-            var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
+          var target = $( form );
+          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
+          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
 
-            fieldsToProtect.each( function() {
-              if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
-                // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
-                return true;
-              }
-              var field = $( this );
-              var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
-              var resque = self.browserStorage.get( prefix );
-              if ( resque ) {
-                self.restoreFieldsData( field, resque );
-                restored = true;
-              }
-            } );
+          fieldsToProtect.each( function() {
+            if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
+              // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
+              return true;
+            }
+            var field = $( this );
+            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
+            var resque = self.browserStorage.get( prefix );
+            if ( resque ) {
+              self.restoreFieldsData( field, resque );
+              restored = true;
+            }
           } );
 
           if ( restored ) {
@@ -372,7 +362,7 @@
          */
         saveDataByTimeout: function() {
           var self = this;
-          var targetForms = self.targets;
+          var targetForms = self;
           setTimeout( ( function( targetForms ) {
             function timeout() {
               self.saveAllData();
@@ -389,13 +379,11 @@
          */
         bindReleaseData: function() {
           var self = this;
-          self.targets.each( function( i ) {
-            var target = $( this );
-            var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-            var formIdAndName = target.attr( "id" ) + target.attr( "name" );
-            $( this ).bind( "submit reset", function() {
-              self.releaseData( formIdAndName, fieldsToProtect );
-            } );
+          var target = $( form );
+          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
+          var formIdAndName = target.attr( "id" ) + target.attr( "name" );
+          $( form ).bind( "submit reset", function() {
+            self.releaseData( formIdAndName, fieldsToProtect );
           } );
         },
 
@@ -406,12 +394,10 @@
          */
         manuallyReleaseData: function() {
           var self = this;
-          self.targets.each( function( i ) {
-            var target = $( this );
-            var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-            var formIdAndName = target.attr( "id" ) + target.attr( "name" );
-            self.releaseData( formIdAndName, fieldsToProtect );
-          } );
+          var target = $( form );
+          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
+          var formIdAndName = target.attr( "id" ) + target.attr( "name" );
+          self.releaseData( formIdAndName, fieldsToProtect );
         },
 
         /**
