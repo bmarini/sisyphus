@@ -98,6 +98,7 @@
     function init (form) {
       var instantiated = false;
       var started = false;
+      var self;
 
       return {
         /**
@@ -108,6 +109,8 @@
          * @return void
          */
         setInitialOptions: function ( options ) {
+          self = this;
+
           var defaults = {
             excludeFields: [],
             customKeyPrefix: "",
@@ -144,8 +147,6 @@
          */
         protect: function( options ) {
           this.setOptions( options );
-          var self = this;
-
           this.href = location.hostname + location.pathname + location.search + location.hash;
 
           if ( ! this.browserStorage.isAvailable() ) {
@@ -173,27 +174,24 @@
          * @return void
          */
         bindSaveData: function() {
-          var self = this;
-
           if ( self.options.timeout ) {
             self.saveDataByTimeout();
           }
 
-          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
-          var fieldsToProtect = $( form ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-          fieldsToProtect.each( function() {
+          self.fieldsToProtect().each( function() {
             if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
               // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
               return true;
             }
             var field = $( this );
-            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
+            var key = self.storageKey( field );
+
             if ( field.is( ":text" ) || field.is( "textarea" ) ) {
               if ( ! self.options.timeout ) {
-                self.bindSaveDataImmediately( field, prefix );
+                self.bindSaveDataImmediately( field, key );
               }
             }
-            self.bindSaveDataOnChange( field, prefix );
+            self.bindSaveDataOnChange( field );
           } );
         },
 
@@ -205,17 +203,13 @@
          * @return void
          */
         saveAllData: function() {
-          var self = this;
-          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
-          var fieldsToProtect = $( form ).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file").not( ":password" );
-
-          fieldsToProtect.each( function() {
+          self.fieldsToProtect().each( function() {
             var field = $( this );
             if ( $.inArray( this, self.options.excludeFields ) !== -1 || field.attr( "name" ) === undefined ) {
               // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
               return true;
             }
-            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
+            var key = self.storageKey( field );
             var value = field.val();
 
             if ( field.is(":checkbox") ) {
@@ -227,14 +221,14 @@
               } else {
                 value = field.is( ":checked" );
               }
-              self.saveToBrowserStorage( prefix, value, false );
+              self.saveToBrowserStorage( key, value, false );
             } else if ( field.is( ":radio" ) ) {
               if ( field.is( ":checked" ) ) {
                 value = field.val();
-                self.saveToBrowserStorage( prefix, value, false );
+                self.saveToBrowserStorage( key, value, false );
               }
             } else {
-              self.saveToBrowserStorage( prefix, value, false );
+              self.saveToBrowserStorage( key, value, false );
             }
           } );
 
@@ -247,21 +241,15 @@
          * @return void
          */
         restoreAllData: function() {
-          var self = this;
           var restored = false;
 
-          var target = $( form );
-          var targetFormIdAndName = $( form ).attr( "id" ) + $( form ).attr( "name" );
-          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-
-          fieldsToProtect.each( function() {
+          self.fieldsToProtect().each( function() {
             if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
               // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
               return true;
             }
             var field = $( this );
-            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
-            var resque = self.browserStorage.get( prefix );
+            var resque = self.browserStorage.get( self.storageKey( field ) );
             if ( resque ) {
               self.restoreFieldsData( field, resque );
               restored = true;
@@ -305,19 +293,18 @@
          * Bind immediate saving (on typing/checking/changing) field data to local storage when user fills it
          *
          * @param Object field    jQuery form element object
-         * @param String prefix   prefix used as key to store data in local storage
+         * @param String key      key to store data in local storage
          *
          * @return void
          */
-        bindSaveDataImmediately: function( field, prefix ) {
-          var self = this;
+        bindSaveDataImmediately: function( field, key ) {
           if ( 'onpropertychange' in field ) {
             field.get(0).onpropertychange = function() {
-              self.saveToBrowserStorage( prefix, field.val() );
+              self.saveToBrowserStorage( key, field.val() );
             };
           } else {
             field.get(0).oninput = function() {
-              self.saveToBrowserStorage( prefix, field.val() );
+              self.saveToBrowserStorage( key, field.val() );
             };
           }
         },
@@ -344,15 +331,11 @@
          * Bind saving field data on change
          *
          * @param Object field    jQuery form element object
-         * @param String prefix   prefix used as key to store data in local storage
          *
          * @return void
          */
-        bindSaveDataOnChange: function( field, prefix ) {
-          var self = this;
-          field.change( function() {
-            self.saveAllData();
-          } );
+        bindSaveDataOnChange: function( field ) {
+          field.change( self.saveAllData );
         },
 
         /**
@@ -361,7 +344,6 @@
          * @return void
          */
         saveDataByTimeout: function() {
-          var self = this;
           var targetForms = self;
           setTimeout( ( function( targetForms ) {
             function timeout() {
@@ -378,13 +360,7 @@
          * @return void
          */
         bindReleaseData: function() {
-          var self = this;
-          var target = $( form );
-          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-          var formIdAndName = target.attr( "id" ) + target.attr( "name" );
-          $( form ).bind( "submit reset", function() {
-            self.releaseData( formIdAndName, fieldsToProtect );
-          } );
+          $( form ).bind( "submit reset", self.releaseData );
         },
 
         /**
@@ -393,40 +369,48 @@
          * @return void
          */
         manuallyReleaseData: function() {
-          var self = this;
-          var target = $( form );
-          var fieldsToProtect = target.find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
-          var formIdAndName = target.attr( "id" ) + target.attr( "name" );
-          self.releaseData( formIdAndName, fieldsToProtect );
+          self.releaseData( );
         },
 
         /**
          * Bind release form fields data from local storage on submit/resett form
          *
-         * @param String targetFormIdAndName  a form identifier consists of its id and name glued
-         * @param Object fieldsToProtect    jQuery object contains form fields to protect
-         *
          * @return void
          */
-        releaseData: function( targetFormIdAndName, fieldsToProtect ) {
+        releaseData: function() {
           var released = false;
-          var self = this;
-          fieldsToProtect.each( function() {
+
+          self.fieldsToProtect().each( function() {
             if ( $.inArray( this, self.options.excludeFields ) !== -1 ) {
-              // Returning non-false is the same as a continue statement in a for loop; it will skip immediately to the next iteration.
+              // Returning non-false is the same as a continue statement in a for loop;
+              // it will skip immediately to the next iteration.
               return true;
             }
+
             var field = $( this );
-            var prefix = (self.options.locationBased ? self.href : "") + targetFormIdAndName + field.attr( "name" ) + self.options.customKeyPrefix;
-            self.browserStorage.remove( prefix );
+            self.browserStorage.remove( self.storageKey( field ) );
             released = true;
           } );
 
           if ( released ) {
             self.options.onRelease.call();
           }
-        }
+        },
 
+        fieldsToProtect: function() {
+          return $(form).find( ":input" ).not( ":submit" ).not( ":reset" ).not( ":button" ).not( ":file" ).not( ":password" );
+        },
+
+        storageKey: function( field ) {
+          return ( self.options.locationBased ? self.href : "" ) +
+            self.targetFormIdAndName() +
+            field.attr( "name" ) +
+            self.options.customKeyPrefix;
+        },
+
+        targetFormIdAndName: function() {
+          return $( form ).attr( "id" ) + $( form ).attr( "name" );
+        }
       };
     }
 
